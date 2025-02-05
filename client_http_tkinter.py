@@ -1,15 +1,14 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import requests
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 import logging
-from datetime import datetime
 import threading
 import time
 
-# Types partagés (identiques au client terminal)
+# Enums pour le rôle et le statut du joueur
 class Role(Enum):
     LOUP = "loup"
     VILLAGEOIS = "villageois"
@@ -24,7 +23,7 @@ class Position:
     y: int
 
 class GameClientTk:
-    def _init_(self, base_url: str = "http://localhost:5000/api/v1"):
+    def __init__(self, base_url: str = "http://localhost:5000"):
         self.base_url = base_url
         self.session = requests.Session()
         self.player_id = None
@@ -60,13 +59,10 @@ class GameClientTk:
 
         ttk.Label(self.login_frame, text="Rôle:").grid(row=1, column=0, padx=5, pady=5)
         self.role_var = tk.StringVar(value="villageois")
-        ttk.Radiobutton(self.login_frame, text="Villageois", variable=self.role_var,
-                       value="villageois").grid(row=1, column=1)
-        ttk.Radiobutton(self.login_frame, text="Loup", variable=self.role_var,
-                       value="loup").grid(row=1, column=2)
+        ttk.Radiobutton(self.login_frame, text="Villageois", variable=self.role_var, value="villageois").grid(row=1, column=1)
+        ttk.Radiobutton(self.login_frame, text="Loup", variable=self.role_var, value="loup").grid(row=1, column=2)
 
-        self.inscription_btn = ttk.Button(self.login_frame, text="S'inscrire",
-                                        command=self.handle_inscription)
+        self.inscription_btn = ttk.Button(self.login_frame, text="S'inscrire", command=self.handle_inscription)
         self.inscription_btn.grid(row=2, column=1, pady=10)
 
         # Zone de jeu
@@ -138,19 +134,12 @@ class GameClientTk:
             return
 
         delta = {"z": (0, -1), "s": (0, 1), "q": (-1, 0), "d": (1, 0)}[direction]
-        nouvelle_pos = Position(
-            self.position.x + delta[0],
-            self.position.y + delta[1]
-        )
+        nouvelle_pos = Position(self.position.x + delta[0], self.position.y + delta[1])
 
         try:
             response = self.session.post(
                 f"{self.base_url}/deplacement/{self.player_id}",
-                json={
-                    "x": nouvelle_pos.x,
-                    "y": nouvelle_pos.y,
-                    "tour": self.get_tour_actuel()
-                }
+                json={"x": nouvelle_pos.x, "y": nouvelle_pos.y}
             )
 
             if response.status_code == 200:
@@ -161,58 +150,6 @@ class GameClientTk:
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Erreur réseau: {e}")
 
-    def get_vision(self) -> Optional[Dict]:
-        """Récupération de la vision du joueur"""
-        if not self.player_id:
-            return None
-
-        try:
-            response = self.session.get(f"{self.base_url}/vision/{self.player_id}")
-            if response.status_code == 200:
-                return response.json()
-            return None
-        except:
-            return None
-
-    def draw_map(self, vision: Dict):
-        """Dessin de la carte"""
-        if not vision:
-            return
-
-        self.canvas.delete("all")
-        carte = vision["carte"]
-        cell_size = min(400 // len(carte), 400 // len(carte[0]))
-
-        colors = {
-            ".": "white",    # Case vide
-            "L": "red",      # Loup
-            "V": "green",    # Villageois
-            "?": "gray",     # Inconnu
-            "X": "black"     # Obstacle
-        }
-
-        for i, row in enumerate(carte):
-            for j, cell in enumerate(row):
-                x1, y1 = j * cell_size, i * cell_size
-                x2, y2 = x1 + cell_size, y1 + cell_size
-                color = colors.get(cell, "white")
-                self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="black")
-
-        # Mise à jour des informations
-        info_text = f"Tour: {vision['tour_actuel']} - "
-        info_text += f"Temps: {vision['temps_restant']:.1f}s"
-        if vision.get("elimine"):
-            info_text += " - ÉLIMINÉ!"
-        self.info_label.config(text=info_text)
-
-    def update_game_state(self):
-        """Mise à jour de l'état du jeu"""
-        while self.running:
-            vision = self.get_vision()
-            if vision:
-                self.root.after(0, self.draw_map, vision)
-            time.sleep(0.1)  # Rafraîchissement toutes les 100ms
-
     def start_game_updates(self):
         """Démarrage du thread de mise à jour"""
         self.running = True
@@ -220,21 +157,14 @@ class GameClientTk:
         self.update_thread.daemon = True
         self.update_thread.start()
 
-    def get_tour_actuel(self) -> int:
-        """Récupération du tour actuel"""
-        try:
-            response = self.session.get(f"{self.base_url}/tour")
-            if response.status_code == 200:
-                return response.json()["tour_actuel"]
-            return 0
-        except:
-            return 0
+    def update_game_state(self):
+        """Mise à jour de l'état du jeu"""
+        while self.running:
+            time.sleep(0.1)
 
     def run(self):
         """Lancement de l'application"""
-        # Gestion de la fermeture
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        # Lancement de la boucle principale
         self.root.mainloop()
 
     def on_closing(self):
@@ -244,6 +174,6 @@ class GameClientTk:
             self.update_thread.join(timeout=1.0)
         self.root.destroy()
 
-if __name__ == "_main_":
-    client = GameClientTk()
-client.run()
+if __name__ == "__main__":
+    client = GameClientTk("http://localhost:5000")  # Assurez-vous que l'URL du serveur est correcte
+    client.run()
